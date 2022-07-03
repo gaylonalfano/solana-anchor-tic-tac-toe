@@ -1,5 +1,5 @@
 import * as anchor from "@project-serum/anchor";
-import { Program } from "@project-serum/anchor";
+import { Program, AnchorError } from "@project-serum/anchor";
 import { expect } from "chai";
 import { TicTacToe } from "../target/types/tic_tac_toe";
 
@@ -189,5 +189,135 @@ describe("tic-tac-toe", () => {
         [null, null, null],
       ]
     );
+  });
+
+  it("out of bounds row", async () => {
+    // 1. Generate some keypairs
+    const gameKeypair = anchor.web3.Keypair.generate();
+    const playerOne = (program.provider as anchor.AnchorProvider).wallet;
+    const playerTwo = anchor.web3.Keypair.generate();
+
+    // 2. Send the transaction to setup a new game
+    await program.methods
+      .setupGame(playerTwo.publicKey) // instruction arguments
+      .accounts({
+        game: gameKeypair.publicKey,
+        playerOne: playerOne.publicKey,
+      }) // accounts
+      .signers([gameKeypair])
+      // We have to add gameKeypair for signers bc whenever an account gets
+      // created, it has to sign its creation transaction
+      .rpc();
+
+    // 3. After the transaction returns, we can fetch the state of the game account
+    let gameState = await program.account.game.fetch(gameKeypair.publicKey);
+
+    // 4. Verify the game has set up correctly
+    // https://book.anchor-lang.com/anchor_references/javascript_anchor_types_reference.html
+    expect(gameState.turn).to.equal(1);
+    expect(gameState.players).to.eql([
+      playerOne.publicKey,
+      playerTwo.publicKey,
+    ]);
+    expect(gameState.state).to.eql({ active: {} });
+    expect(gameState.board).to.eql([
+      [null, null, null],
+      [null, null, null],
+      [null, null, null],
+    ]);
+
+    // 5. Send the instruction
+    try {
+      await play(
+        program,
+        gameKeypair.publicKey,
+        playerOne,
+        { row: 5, column: 0 }, // ERROR
+        2,
+        { active: {} }, // NOTE Check Rust/TS types reference
+        [
+          [{ x: {} }, null, null],
+          [null, null, null],
+          [null, null, null],
+        ]
+      );
+    } catch (_err) {
+      expect(_err).to.be.instanceOf(AnchorError);
+      const err: AnchorError = _err;
+      expect(err.error.errorCode.number).to.equal(6000);
+    }
+  });
+
+  it("same player in subsequent turns", async () => {
+    // 1. Generate some keypairs
+    const gameKeypair = anchor.web3.Keypair.generate();
+    const playerOne = (program.provider as anchor.AnchorProvider).wallet;
+    const playerTwo = anchor.web3.Keypair.generate();
+
+    // 2. Send the transaction to setup a new game
+    await program.methods
+      .setupGame(playerTwo.publicKey) // instruction arguments
+      .accounts({
+        game: gameKeypair.publicKey,
+        playerOne: playerOne.publicKey,
+      }) // accounts
+      .signers([gameKeypair])
+      // We have to add gameKeypair for signers bc whenever an account gets
+      // created, it has to sign its creation transaction
+      .rpc();
+
+    // 3. After the transaction returns, we can fetch the state of the game account
+    let gameState = await program.account.game.fetch(gameKeypair.publicKey);
+
+    // 4. Verify the game has set up correctly
+    // https://book.anchor-lang.com/anchor_references/javascript_anchor_types_reference.html
+    expect(gameState.turn).to.equal(1);
+    expect(gameState.players).to.eql([
+      playerOne.publicKey,
+      playerTwo.publicKey,
+    ]);
+    expect(gameState.state).to.eql({ active: {} });
+    expect(gameState.board).to.eql([
+      [null, null, null],
+      [null, null, null],
+      [null, null, null],
+    ]);
+
+    // 5. Send instructions to simulate error
+    try {
+      await play(
+        program,
+        gameKeypair.publicKey,
+        playerOne,
+        { row: 0, column: 0 },
+        2,
+        { active: {} }, // NOTE Check Rust/TS types reference
+        [
+          [{ x: {} }, null, null],
+          [null, null, null],
+          [null, null, null],
+        ]
+      );
+    } catch (_err) {
+      expect(_err).to.be.instanceOf(AnchorError);
+    }
+
+    try {
+      await play(
+        program,
+        gameKeypair.publicKey,
+        playerOne,
+        { row: 0, column: 1 },
+        3,
+        { active: {} },
+        [
+          [{ x: {} }, { x: {} }, null],
+          [null, null, null],
+          [null, null, null],
+        ]
+      );
+    } catch (_err) {
+      expect(_err).to.be.instanceOf(AnchorError);
+    }
   });
 });
