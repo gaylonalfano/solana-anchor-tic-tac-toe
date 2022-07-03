@@ -14,8 +14,28 @@ pub mod tic_tac_toe {
         ctx.accounts.game.start([ctx.accounts.player_one.key(), player_two]);
         Ok(())
     }
+
+    pub fn play(ctx: Context<Play>, tile: Tile) -> Result<()> {
+        let game = &mut ctx.accounts.game;
+
+        // Compare game's current player key w/ Play instruction player key
+        // Q: Any way to perform this check earlier? 
+        // A: Guess not, since its this play() function call that actually
+        // matters (the instruction struct and impl methods are helpers really)
+        // A: Inside Play accounts struct, we checked that the player account
+        // has signed the transaction, but we do not check that it is the
+        // correct player we expect, hence this check:
+        require_keys_eq!(
+            game.current_player(),
+            ctx.accounts.player.key(),
+            TicTacToeError::NotPlayersTurn
+        );
+
+        game.play(&tile)
+    }
 }
 
+// === Instructions
 #[derive(Accounts)]
 pub struct SetupGame<'info> {
     // NOTE 'init' creates rent-exempt accounts and sb has to pay
@@ -32,6 +52,16 @@ pub struct SetupGame<'info> {
     pub system_program: Program<'info, System>,
 }
 
+// NOTE This is sometimes referred as 'the Play accounts struct'
+#[derive(Accounts)]
+pub struct Play<'info> {
+    #[account(mut)]
+    pub game: Account<'info, Game>,
+    pub player: Signer<'info>
+}
+
+
+// === Accounts
 #[account]
 pub struct Game {
     players: [Pubkey; 2], // (32 * 2) = 64
@@ -66,10 +96,10 @@ impl Game {
     }
 
     pub fn play(&mut self, tile: &Tile) -> Result<()> {
-        // Determine the tile
-        // See if there is an existing Sign?
         require!(self.is_active(), TicTacToeError::GameAlreadyOver);
 
+        // Determine the tile
+        // See if there is an existing Sign?
         match tile {
             tile @ Tile {
                 row: 0..=2,

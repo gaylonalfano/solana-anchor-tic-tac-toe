@@ -3,6 +3,32 @@ import { Program } from "@project-serum/anchor";
 import { expect } from "chai";
 import { TicTacToe } from "../target/types/tic_tac_toe";
 
+// Helper function
+async function play(
+  program: Program<TicTacToe>,
+  game,
+  player,
+  tile,
+  expectedTurn,
+  expectedGameState,
+  expectedBoard
+) {
+  // Send the actual instruction
+  await program.methods
+    .play(tile)
+    .accounts({
+      player: player.publicKey,
+      game,
+    })
+    .signers(player instanceof (anchor.Wallet as any) ? [] : [player])
+    .rpc();
+
+  const gameState = await program.account.game.fetch(game);
+  expect(gameState.turn).to.equal(expectedTurn);
+  expect(gameState.state).to.eql(expectedGameState);
+  expect(gameState.board).to.eql(expectedBoard);
+}
+
 describe("tic-tac-toe", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -54,5 +80,114 @@ describe("tic-tac-toe", () => {
       [null, null, null],
       [null, null, null],
     ]);
+  });
+
+  it("player one wins", async () => {
+    // 1. Generate some keypairs
+    const gameKeypair = anchor.web3.Keypair.generate();
+    const playerOne = (program.provider as anchor.AnchorProvider).wallet;
+    const playerTwo = anchor.web3.Keypair.generate();
+
+    // 2. Send the transaction to setup a new game
+    await program.methods
+      .setupGame(playerTwo.publicKey) // instruction arguments
+      .accounts({
+        game: gameKeypair.publicKey,
+        playerOne: playerOne.publicKey,
+      }) // accounts
+      .signers([gameKeypair])
+      // We have to add gameKeypair for signers bc whenever an account gets
+      // created, it has to sign its creation transaction
+      .rpc();
+
+    // 3. After the transaction returns, we can fetch the state of the game account
+    let gameState = await program.account.game.fetch(gameKeypair.publicKey);
+
+    // 4. Verify the game has set up correctly
+    // https://book.anchor-lang.com/anchor_references/javascript_anchor_types_reference.html
+    expect(gameState.turn).to.equal(1);
+    expect(gameState.players).to.eql([
+      playerOne.publicKey,
+      playerTwo.publicKey,
+    ]);
+    expect(gameState.state).to.eql({ active: {} });
+    expect(gameState.board).to.eql([
+      [null, null, null],
+      [null, null, null],
+      [null, null, null],
+    ]);
+
+    // 5. Finally, let's use the helper fn to play some turns
+    // NOTE We'll need to play/simulate a real game of plays
+    // to make playerOne win
+    await play(
+      program,
+      gameKeypair.publicKey,
+      playerOne,
+      { row: 0, column: 0 },
+      2,
+      { active: {} }, // NOTE Check Rust/TS types reference
+      [
+        [{ x: {} }, null, null],
+        [null, null, null],
+        [null, null, null],
+      ]
+    );
+
+    await play(
+      program,
+      gameKeypair.publicKey,
+      playerTwo,
+      { row: 1, column: 0 },
+      3,
+      { active: {} }, // NOTE Check Rust/TS types reference
+      [
+        [{ x: {} }, null, null],
+        [{ o: {} }, null, null],
+        [null, null, null],
+      ]
+    );
+
+    await play(
+      program,
+      gameKeypair.publicKey,
+      playerOne,
+      { row: 0, column: 1 },
+      4,
+      { active: {} }, // NOTE Check Rust/TS types reference
+      [
+        [{ x: {} }, { x: {} }, null],
+        [{ o: {} }, null, null],
+        [null, null, null],
+      ]
+    );
+
+    await play(
+      program,
+      gameKeypair.publicKey,
+      playerTwo,
+      { row: 1, column: 1 },
+      5,
+      { active: {} }, // NOTE Check Rust/TS types reference
+      [
+        [{ x: {} }, { x: {} }, null],
+        [{ o: {} }, { o: {} }, null],
+        [null, null, null],
+      ]
+    );
+
+    await play(
+      program,
+      gameKeypair.publicKey,
+      playerOne,
+      { row: 0, column: 2 },
+      5, // NOTE When status == 'won', then it doesn't increment game.turn
+      { won: { winner: playerOne.publicKey } },
+      [
+        [{ x: {} }, { x: {} }, { x: {} }],
+        [{ o: {} }, { o: {} }, null],
+        [null, null, null],
+      ]
+    );
   });
 });
