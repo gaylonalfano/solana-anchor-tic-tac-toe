@@ -21,6 +21,7 @@ pub fn play(ctx: Context<Play>, tile: Tile) -> Result<()> {
     game.play(&tile)
 }
 
+
 // NOTE This is sometimes referred as 'the Play accounts struct'
 #[derive(Accounts)]
 pub struct Play<'info> {
@@ -28,4 +29,3 @@ pub struct Play<'info> {
     pub game: Account<'info, Game>,
     pub player: Signer<'info>
 }
-
